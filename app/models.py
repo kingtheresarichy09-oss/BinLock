@@ -14,7 +14,13 @@ class User(Base):
 
     role = Column(String(50), default="user", nullable=False)
 
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=False, nullable=False)
+
+    is_verified = Column(Boolean, default=False, nullable=False)
+
+    verification_token_hash = Column(String(255), nullable=True)
+
+    verification_token_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
