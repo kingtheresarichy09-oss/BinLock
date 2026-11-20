@@ -17,7 +17,7 @@ from app.security import (
 )
 from app.email_service import create_verification_email
 from app.email_sender import send_email
-
+from app.dependencies import get_current_user
 
 BASE_URL = os.getenv(
     "BINLOCK_BASE_URL",
@@ -219,3 +219,9 @@ def login_user(
         "access_token": access_token,
         "token_type": "bearer"
     }
+
+@router.get("/me", response_model=UserResponse)
+def get_my_profile(
+    current_user: User = Depends(get_current_user)
+):
+    return current_user
