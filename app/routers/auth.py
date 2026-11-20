@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User
-from app.schemas import UserRegister, UserResponse
+from app.schemas import UserRegister, UserResponse, UserLogin
 from app.security import (
     hash_password,
+    verify_password,
     generate_verification_token,
     hash_verification_token,
-    get_verification_expiry
+    get_verification_expiry,
+    create_access_token
 )
 from app.email_service import create_verification_email
 from app.email_sender import send_email
@@ -174,4 +176,46 @@ def verify_email(
 
     return {
         "message": "Email verified successfully. Your BinLock account is now active."
+    }
+
+@router.post("/login")
+def login_user(
+    user_data: UserLogin,
+    db: Session = Depends(get_db)
+):
+
+    user = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
+
+    if not user or not verify_password(
+        user_data.password,
+        user.hashed_password
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    # Ensure email has been verified
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before logging in."
+        )
+
+    # Ensure account is active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is inactive."
+        )
+
+    # Generate JWT access token
+    access_token = create_access_token(user.id)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
     }
