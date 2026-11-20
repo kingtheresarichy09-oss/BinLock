@@ -2,14 +2,19 @@ from fastapi import FastAPI
 
 from app.database import engine, Base
 from app import models
+from app.routers.auth import router as auth_router
+
 
 app = FastAPI(
     title="BinLock API",
-    description="Backend API FOR BinLock waste management platform",
+    description="Backend API for BinLock waste management platform",
     version="1.0.0"
 )
 
+app.include_router(auth_router)
+
 Base.metadata.create_all(bind=engine)
+
 
 @app.get("/")
 def home():
