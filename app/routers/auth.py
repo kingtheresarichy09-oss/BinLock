@@ -17,7 +17,8 @@ from app.security import (
 )
 from app.email_service import create_verification_email
 from app.email_sender import send_email
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_admin
+
 
 BASE_URL = os.getenv(
     "BINLOCK_BASE_URL",
@@ -225,3 +226,13 @@ def get_my_profile(
     current_user: User = Depends(get_current_user)
 ):
     return current_user
+
+@router.get("/admin-check")
+def admin_check(
+    current_user: User = Depends(require_admin)
+):
+    return {
+        "message": "Administrator access granted.",
+        "admin": current_user.full_name,
+        "role": current_user.role
+    }
