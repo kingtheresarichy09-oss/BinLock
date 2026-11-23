@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from app.database import Base
 
 class User(Base):
@@ -43,6 +43,25 @@ class Bin(Base):
     status = Column(String(50), default="available", nullable=False)
 
     is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+class PickupRequest(Base):
+    __tablename__ = "pickup_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    bin_id = Column(Integer, ForeignKey("bins.id"), nullable=False)
+
+    description = Column(Text, nullable=False)
+
+    status = Column(String(50), default="pending", nullable=False)
 
     created_at = Column(
         DateTime(timezone=True),

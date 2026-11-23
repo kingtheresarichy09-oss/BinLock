@@ -1,5 +1,5 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
-
 
 class UserRegister(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
@@ -42,3 +42,24 @@ class BinResponse(BaseModel):
     location: str
     status: str
     is_active: bool
+
+class PickupRequestCreate(BaseModel):
+    bin_id: int
+    description: str = Field(min_length=5, max_length=1000)
+
+
+class PickupRequestStatusUpdate(BaseModel):
+    status: str
+
+
+class PickupRequestResponse(BaseModel):
+    model_config = {
+        "from_attributes": True
+    }
+
+    id: int
+    user_id: int
+    bin_id: int
+    description: str
+    status: str
+    created_at: datetime
