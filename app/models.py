@@ -29,3 +29,23 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
+
+class Bin(Base):
+    __tablename__ = "bins"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    bin_code = Column(String(50), unique=True, index=True, nullable=False)
+
+    location = Column(String(255), nullable=False)
+
+    status = Column(String(50), default="available", nullable=False)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )

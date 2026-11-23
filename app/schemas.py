@@ -20,3 +20,25 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: str
     is_verified: bool
+
+class BinCreate(BaseModel):
+    bin_code: str = Field(min_length=3, max_length=50)
+    location: str = Field(min_length=3, max_length=255)
+
+
+class BinUpdate(BaseModel):
+    location: str | None = Field(default=None, min_length=3, max_length=255)
+    status: str | None = None
+    is_active: bool | None = None
+
+
+class BinResponse(BaseModel):
+    model_config = {
+        "from_attributes": True
+    }
+
+    id: int
+    bin_code: str
+    location: str
+    status: str
+    is_active: bool
