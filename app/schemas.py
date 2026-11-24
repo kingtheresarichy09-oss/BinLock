@@ -5,6 +5,8 @@ class UserRegister(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    address: str = Field(min_length=5, max_length=255)
+    number_of_occupants: int = Field(ge=1)
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -18,6 +20,8 @@ class UserResponse(BaseModel):
     id: int
     full_name: str
     email: EmailStr
+    address: str | None
+    number_of_occupants: int | None
     role: str
     is_verified: bool
 

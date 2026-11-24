@@ -74,6 +74,8 @@ def register_user(
     new_user = User(
         full_name=user_data.full_name,
         email=user_data.email,
+        address=user_data.address,
+        number_of_occupants=user_data.number_of_occupants,
         hashed_password=hashed_password,
         role="user",
         is_active=False,
