@@ -5,17 +5,19 @@ from app import models
 from app.routers.auth import router as auth_router
 from app.routers.bins import router as bins_router
 from app.routers.pickups import router as pickups_router
+from app.routers import subscriptions
 
 
 app = FastAPI(
     title="BinLock API",
     description="Backend API for BinLock waste management platform",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.include_router(auth_router)
 app.include_router(bins_router)
 app.include_router(pickups_router)
+app.include_router(subscriptions.router)
 
 Base.metadata.create_all(bind=engine)
 
@@ -24,5 +26,5 @@ Base.metadata.create_all(bind=engine)
 def home():
     return {
         "message": "Welcome to BinLock API",
-        "status": "running"
+        "status": "running",
     }
