@@ -6,13 +6,18 @@ from app.models import Bin
 from app.schemas import BinCreate, BinUpdate, BinResponse
 from app.dependencies import get_current_user, require_admin
 
+
 router = APIRouter(
     prefix="/bins",
     tags=["Bin Management"]
 )
 
 
-@router.post("/", response_model=BinResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=BinResponse,
+    status_code=status.HTTP_201_CREATED
+)
 def create_bin(
     bin_data: BinCreate,
     db: Session = Depends(get_db),
@@ -24,7 +29,7 @@ def create_bin(
 
     if existing_bin:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_409_CONFLICT,
             detail="A bin with this code already exists."
         )
 
@@ -54,10 +59,15 @@ def get_bin(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    bin_record = db.query(Bin).filter(Bin.id == bin_id).first()
+    bin_record = db.query(Bin).filter(
+        Bin.id == bin_id
+    ).first()
 
     if not bin_record:
-        raise HTTPException(status_code=404, detail="Bin not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bin not found."
+        )
 
     return bin_record
 
@@ -69,10 +79,15 @@ def update_bin(
     db: Session = Depends(get_db),
     admin=Depends(require_admin)
 ):
-    bin_record = db.query(Bin).filter(Bin.id == bin_id).first()
+    bin_record = db.query(Bin).filter(
+        Bin.id == bin_id
+    ).first()
 
     if not bin_record:
-        raise HTTPException(status_code=404, detail="Bin not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bin not found."
+        )
 
     update_data = bin_data.model_dump(exclude_unset=True)
 
@@ -85,16 +100,26 @@ def update_bin(
     return bin_record
 
 
-@router.delete("/{bin_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{bin_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_bin(
     bin_id: int,
     db: Session = Depends(get_db),
     admin=Depends(require_admin)
 ):
-    bin_record = db.query(Bin).filter(Bin.id == bin_id).first()
+    bin_record = db.query(Bin).filter(
+        Bin.id == bin_id
+    ).first()
 
     if not bin_record:
-        raise HTTPException(status_code=404, detail="Bin not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bin not found."
+        )
 
     db.delete(bin_record)
     db.commit()
+
+    return None

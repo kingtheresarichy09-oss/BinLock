@@ -6,7 +6,8 @@ from app.routers.auth import router as auth_router
 from app.routers.bins import router as bins_router
 from app.routers.pickups import router as pickups_router
 from app.routers import subscriptions
-
+from app.routers import payments
+from app.routers import bin_access
 
 app = FastAPI(
     title="BinLock API",
@@ -18,6 +19,8 @@ app.include_router(auth_router)
 app.include_router(bins_router)
 app.include_router(pickups_router)
 app.include_router(subscriptions.router)
+app.include_router(payments.router)
+app.include_router(bin_access.router)
 
 Base.metadata.create_all(bind=engine)
 

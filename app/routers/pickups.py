@@ -6,9 +6,10 @@ from app.models import PickupRequest, Bin, User
 from app.schemas import (
     PickupRequestCreate,
     PickupRequestStatusUpdate,
-    PickupRequestResponse
+    PickupRequestResponse,
 )
 from app.dependencies import get_current_user, require_admin
+
 
 router = APIRouter(
     prefix="/pickups",
@@ -16,7 +17,11 @@ router = APIRouter(
 )
 
 
-@router.post("/", response_model=PickupRequestResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=PickupRequestResponse,
+    status_code=status.HTTP_201_CREATED
+)
 def create_pickup_request(
     pickup_data: PickupRequestCreate,
     db: Session = Depends(get_db),
@@ -24,12 +29,12 @@ def create_pickup_request(
 ):
     bin_record = db.query(Bin).filter(
         Bin.id == pickup_data.bin_id,
-        Bin.is_active == True
+        Bin.is_active.is_(True)
     ).first()
 
     if not bin_record:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Active bin not found."
         )
 
@@ -46,7 +51,10 @@ def create_pickup_request(
     return new_request
 
 
-@router.get("/my-requests", response_model=list[PickupRequestResponse])
+@router.get(
+    "/my-requests",
+    response_model=list[PickupRequestResponse]
+)
 def get_my_pickup_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -56,7 +64,10 @@ def get_my_pickup_requests(
     ).all()
 
 
-@router.get("/", response_model=list[PickupRequestResponse])
+@router.get(
+    "/",
+    response_model=list[PickupRequestResponse]
+)
 def get_all_pickup_requests(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin)
@@ -64,7 +75,10 @@ def get_all_pickup_requests(
     return db.query(PickupRequest).all()
 
 
-@router.get("/{request_id}", response_model=PickupRequestResponse)
+@router.get(
+    "/{request_id}",
+    response_model=PickupRequestResponse
+)
 def get_pickup_request(
     request_id: int,
     db: Session = Depends(get_db),
@@ -75,15 +89,27 @@ def get_pickup_request(
     ).first()
 
     if not pickup:
-        raise HTTPException(status_code=404, detail="Pickup request not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pickup request not found."
+        )
 
-    if current_user.role != "admin" and pickup.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied.")
+    if (
+        current_user.role != "admin"
+        and pickup.user_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied."
+        )
 
     return pickup
 
 
-@router.patch("/{request_id}/status", response_model=PickupRequestResponse)
+@router.patch(
+    "/{request_id}/status",
+    response_model=PickupRequestResponse
+)
 def update_pickup_status(
     request_id: int,
     status_data: PickupRequestStatusUpdate,
@@ -95,7 +121,10 @@ def update_pickup_status(
     ).first()
 
     if not pickup:
-        raise HTTPException(status_code=404, detail="Pickup request not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pickup request not found."
+        )
 
     allowed_transitions = {
         "pending": ["approved", "cancelled"],
@@ -106,12 +135,18 @@ def update_pickup_status(
     }
 
     if status_data.status not in allowed_transitions:
-        raise HTTPException(status_code=400, detail="Invalid pickup status.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid pickup status."
+        )
 
     if status_data.status not in allowed_transitions[pickup.status]:
         raise HTTPException(
-            status_code=400,
-            detail=f"Cannot change status from {pickup.status} to {status_data.status}."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot change status from {pickup.status} "
+                f"to {status_data.status}."
+            )
         )
 
     pickup.status = status_data.status

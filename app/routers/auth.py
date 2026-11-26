@@ -13,7 +13,7 @@ from app.security import (
     generate_verification_token,
     hash_verification_token,
     get_verification_expiry,
-    create_access_token
+    create_access_token,
 )
 from app.email_service import create_verification_email
 from app.email_sender import send_email
@@ -23,7 +23,7 @@ from app.dependencies import get_current_user, require_admin
 BASE_URL = os.getenv(
     "BINLOCK_BASE_URL",
     "http://127.0.0.1:8000"
-)
+).rstrip("/")
 
 
 router = APIRouter(
@@ -55,9 +55,7 @@ def register_user(
 
     verification_token = generate_verification_token()
 
-    token_hash = hash_verification_token(
-        verification_token
-    )
+    token_hash = hash_verification_token(verification_token)
 
     token_expiry = get_verification_expiry()
 
@@ -69,7 +67,6 @@ def register_user(
         user_data.email,
         verification_link
     )
-
 
     new_user = User(
         full_name=user_data.full_name,
@@ -91,6 +88,7 @@ def register_user(
     send_email(email_message)
 
     return new_user
+
 
 @router.post("/resend-verification")
 def resend_verification_email(
@@ -138,6 +136,7 @@ def resend_verification_email(
         "message": "A new verification email has been sent."
     }
 
+
 @router.get("/verify-email")
 def verify_email(
     token: str,
@@ -181,12 +180,12 @@ def verify_email(
         "message": "Email verified successfully. Your BinLock account is now active."
     }
 
+
 @router.post("/login")
 def login_user(
     user_data: UserLogin,
     db: Session = Depends(get_db)
-):
-
+    ):
     user = db.query(User).filter(
         User.email == user_data.email
     ).first()
@@ -201,21 +200,18 @@ def login_user(
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    # Ensure email has been verified
     if not user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Please verify your email before logging in."
         )
 
-    # Ensure account is active
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is inactive."
         )
 
-    # Generate JWT access token
     access_token = create_access_token(user.id)
 
     return {
@@ -223,11 +219,13 @@ def login_user(
         "token_type": "bearer"
     }
 
+
 @router.get("/me", response_model=UserResponse)
 def get_my_profile(
     current_user: User = Depends(get_current_user)
 ):
     return current_user
+
 
 @router.get("/admin-check")
 def admin_check(
