@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import PickupRequest, Bin, User
+from app.models import PickupRequest, Bin, User, BinAssignment
 from app.schemas import (
     PickupRequestCreate,
     PickupRequestStatusUpdate,
@@ -36,6 +36,18 @@ def create_pickup_request(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Active bin not found."
+        )
+
+    assignment = db.query(BinAssignment).filter(
+        BinAssignment.bin_id == pickup_data.bin_id,
+        BinAssignment.user_id == current_user.id,
+        BinAssignment.status == "active"
+    ).first()
+
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only request pickup for your assigned bin."
         )
 
     new_request = PickupRequest(

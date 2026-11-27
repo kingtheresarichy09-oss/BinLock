@@ -1,3 +1,5 @@
+import logging
+
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,19 +7,25 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_admin
-from app.models import Subscription, OrganisationServiceTier
+from app.models import Subscription, OrganisationServiceTier, User
 from app.schemas import (
     SubscriptionCreate,
     SubscriptionResponse,
     SubscriptionStatusUpdate,
 )
-
+from app.email_service import (
+    create_expiry_reminder_email,
+    create_subscription_expired_email,
+)
+from app.email_sender import send_email
 
 
 router = APIRouter(
     prefix="/subscriptions",
     tags=["Subscriptions"],
 )
+
+logger = logging.getLogger(__name__)
 
 
 HOUSEHOLD_PRICES = {
@@ -55,6 +63,110 @@ def process_expired_subscriptions(db: Session) -> int:
         db.commit()
 
     return expired_count
+
+
+def process_subscription_reminders(db: Session) -> dict:
+    process_expired_subscriptions(db)
+
+    now = datetime.now(timezone.utc)
+    reminder_deadline = now + timedelta(days=3)
+
+    upcoming_sent = 0
+    expired_sent = 0
+    failed = 0
+
+    # UPCOMING EXPIRY REMINDERS
+
+    upcoming_subscriptions = db.query(Subscription).filter(
+        Subscription.status == "active",
+        Subscription.expiry_date.isnot(None),
+        Subscription.expiry_reminder_sent_at.is_(None),
+    ).all()
+
+    for subscription in upcoming_subscriptions:
+        expiry_date = get_utc_datetime(subscription.expiry_date)
+
+        if not now < expiry_date <= reminder_deadline:
+            continue
+
+        user = db.query(User).filter(
+            User.id == subscription.user_id
+        ).first()
+
+        if not user or not user.email:
+            continue
+
+        try:
+            message = create_expiry_reminder_email(
+                recipient_email=user.email,
+                full_name=user.full_name,
+                plan=subscription.plan,
+                expiry_date=expiry_date,
+            )
+
+            send_email(message)
+
+            subscription.expiry_reminder_sent_at = now
+            db.commit()
+
+            upcoming_sent += 1
+
+        except Exception:
+            db.rollback()
+            failed += 1
+            logger.exception(
+                "Failed to send upcoming-expiry reminder for subscription %s",
+                subscription.id,
+            )
+
+    # EXPIRED SUBSCRIPTION NOTIFICATIONS
+
+    expired_subscriptions = db.query(Subscription).filter(
+        Subscription.status == "expired",
+        Subscription.expiry_date.isnot(None),
+        Subscription.expired_reminder_sent_at.is_(None),
+    ).all()
+
+    for subscription in expired_subscriptions:
+        expiry_date = get_utc_datetime(subscription.expiry_date)
+
+        if expiry_date > now:
+            continue
+
+        user = db.query(User).filter(
+            User.id == subscription.user_id
+        ).first()
+
+        if not user or not user.email:
+            continue
+
+        try:
+            message = create_subscription_expired_email(
+                recipient_email=user.email,
+                full_name=user.full_name,
+                plan=subscription.plan,
+            )
+
+            send_email(message)
+
+            subscription.expired_reminder_sent_at = now
+            db.commit()
+
+            expired_sent += 1
+
+        except Exception:
+            db.rollback()
+            failed += 1
+            logger.exception(
+                "Failed to send expired-subscription notification for subscription %s",
+                subscription.id,
+            )
+
+    return {
+        "upcoming_reminders_sent": upcoming_sent,
+        "expired_notifications_sent": expired_sent,
+        "failed_emails": failed,
+    }
 
 
 def get_subscription_amount(
@@ -236,6 +348,8 @@ def update_subscription_status(
 
             subscription.start_date = now
             subscription.expiry_date = now + duration
+            subscription.expiry_reminder_sent_at = None
+            subscription.expired_reminder_sent_at = None
 
     elif new_status == "expired":
         subscription.expiry_date = datetime.now(timezone.utc)

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User
+from app.models import User, Organisation
 from app.schemas import UserRegister, UserResponse, UserLogin
 from app.security import (
     hash_password,
@@ -68,11 +68,22 @@ def register_user(
         verification_link
     )
 
+    account_name = (
+        user_data.full_name
+        if user_data.customer_type == "household"
+        else user_data.contact_person
+    )
+
     new_user = User(
-        full_name=user_data.full_name,
+        full_name=account_name,
         email=user_data.email,
         address=user_data.address,
-        number_of_occupants=user_data.number_of_occupants,
+        number_of_occupants=(
+            user_data.number_of_occupants
+            if user_data.customer_type == "household"
+            else None
+        ),
+        customer_type=user_data.customer_type,
         hashed_password=hashed_password,
         role="user",
         is_active=False,
@@ -82,6 +93,29 @@ def register_user(
     )
 
     db.add(new_user)
+    db.flush()
+
+    if user_data.customer_type == "organisation":
+        new_organisation = Organisation(
+            owner_user_id=new_user.id,
+            organisation_name=user_data.organisation_name,
+            registration_number=user_data.registration_number,
+            industry=user_data.industry,
+            contact_person=user_data.contact_person,
+            email=user_data.email,
+            phone=user_data.phone,
+            address=user_data.address,
+            estimated_monthly_waste_kg=(
+                int(user_data.estimated_monthly_waste_kg)
+                if user_data.estimated_monthly_waste_kg is not None
+                else None
+            ),
+            service_requirements=user_data.service_requirements,
+            status="pending"
+        )
+
+        db.add(new_organisation)
+
     db.commit()
     db.refresh(new_user)
 

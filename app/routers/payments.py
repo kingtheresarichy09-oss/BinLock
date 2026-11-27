@@ -3,7 +3,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -28,7 +28,7 @@ PAYSTACK_BASE_URL = "https://api.paystack.co"
 def get_paystack_headers():
     if not PAYSTACK_SECRET_KEY:
         raise HTTPException(
-            status_code=503,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Payment service is not configured yet.",
         )
 
@@ -47,6 +47,8 @@ def initialize_payment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    headers = get_paystack_headers()
+
     subscription = db.query(Subscription).filter(
         Subscription.id == payment_data.subscription_id,
         Subscription.user_id == current_user.id,
@@ -102,6 +104,7 @@ def initialize_payment(
     }
 
     callback_url = os.getenv("PAYSTACK_CALLBACK_URL")
+
     if callback_url:
         payload["callback_url"] = callback_url
 
@@ -109,42 +112,37 @@ def initialize_payment(
         response = httpx.post(
             f"{PAYSTACK_BASE_URL}/transaction/initialize",
             json=payload,
-            headers=get_paystack_headers(),
+            headers=headers,
             timeout=20.0,
         )
         response.raise_for_status()
         result = response.json()
 
-    except HTTPException:
-        db.delete(payment)
-        db.commit()
-        raise
-
     except httpx.HTTPError:
-        db.delete(payment)
+        payment.status = "failed"
         db.commit()
+
         raise HTTPException(
             status_code=502,
-            detail="Could not connect to the payment provider.",
+            detail="Could not initialize payment with the provider.",
         )
 
     if not result.get("status"):
-        db.delete(payment)
+        payment.status = "failed"
         db.commit()
+
         raise HTTPException(
             status_code=502,
             detail="Payment provider could not initialize the transaction.",
         )
 
-    payment_data_from_provider = result.get("data", {})
+    provider_data = result.get("data", {})
 
     return {
         "payment_id": payment.id,
         "reference": reference,
-        "authorization_url": payment_data_from_provider.get(
-            "authorization_url"
-        ),
-        "access_code": payment_data_from_provider.get("access_code"),
+        "authorization_url": provider_data.get("authorization_url"),
+        "access_code": provider_data.get("access_code"),
         "amount": payment.amount,
         "currency": "NGN",
         "status": payment.status,
@@ -179,22 +177,27 @@ def verify_payment(
             "message": "Payment has already been verified.",
         }
 
+    if payment.status == "failed":
+        raise HTTPException(
+            status_code=400,
+            detail="This payment has already been marked as failed.",
+        )
+
+    headers = get_paystack_headers()
+
     try:
         response = httpx.get(
             f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
-            headers=get_paystack_headers(),
+            headers=headers,
             timeout=20.0,
         )
         response.raise_for_status()
         result = response.json()
 
-    except HTTPException:
-        raise
-
     except httpx.HTTPError:
         raise HTTPException(
             status_code=502,
-            detail="Could not verify payment with the payment provider.",
+            detail="Could not verify payment with the provider.",
         )
 
     if not result.get("status"):
@@ -227,13 +230,21 @@ def verify_payment(
     if transaction.get("amount") != expected_amount:
         raise HTTPException(
             status_code=400,
-            detail="Verified payment amount does not match the subscription.",
+            detail="Verified payment amount does not match.",
         )
 
     if transaction.get("currency") != "NGN":
         raise HTTPException(
             status_code=400,
             detail="Unexpected payment currency.",
+    )
+
+    customer_email = transaction.get("customer", {}).get("email", "")
+
+    if customer_email.lower() != current_user.email.lower():
+        raise HTTPException(
+            status_code=400,
+            detail="Payment customer email does not match.",
         )
 
     subscription = db.query(Subscription).filter(
@@ -247,23 +258,49 @@ def verify_payment(
             detail="Related subscription was not found.",
         )
 
+    if subscription.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="Subscription is no longer pending.",
+        )
+
     now = datetime.now(timezone.utc)
 
-    payment.status = "successful"
-    payment.paid_at = now
-
-    subscription.status = "active"
-    subscription.start_date = now
-
     if subscription.plan == "weekly":
-        subscription.expiry_date = now + timedelta(days=7)
+        duration = timedelta(days=7)
     elif subscription.plan == "monthly":
-        subscription.expiry_date = now + timedelta(days=30)
+        duration = timedelta(days=30)
     else:
         raise HTTPException(
             status_code=400,
             detail="Unknown subscription plan.",
         )
+
+    payment.status = "successful"
+    payment.paid_at = now
+
+
+    previous_subscription = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id,
+        Subscription.id != subscription.id,
+        Subscription.plan == subscription.plan,
+        Subscription.service_tier == subscription.service_tier,
+        Subscription.status == "active",
+        Subscription.expiry_date > now,
+    ).order_by(
+        Subscription.expiry_date.desc()
+    ).first()
+
+    renewal_start = (
+        previous_subscription.expiry_date
+        if previous_subscription
+        else now
+    )
+
+    subscription.status = "active"
+    subscription.start_date = renewal_start
+    subscription.expiry_date = renewal_start + duration
+
 
     db.commit()
 

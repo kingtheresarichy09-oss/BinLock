@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from app import models
 from app.database import SessionLocal
-from app.routers.subscriptions import process_expired_subscriptions
+from app.routers.subscriptions import process_subscription_reminders
 
 from app.routers.auth import router as auth_router
 from app.routers.bins import router as bins_router
@@ -26,44 +26,48 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def run_expiry_check():
-    """Run subscription expiry processing with a fresh database session."""
+def run_subscription_reminder_check():
     db = SessionLocal()
 
     try:
-        expired_count = process_expired_subscriptions(db)
+        results = process_subscription_reminders(db)
 
-        if expired_count:
+        if any(results.values()):
             logger.info(
-                "Subscription expiry check completed. "
-                "%s subscription(s) expired.",
-                expired_count,
+                "Subscription reminder check completed: %s",
+                results,
             )
+
+    except Exception:
+        db.rollback()
+        raise
 
     finally:
         db.close()
 
 
 async def expiry_scheduler():
-    """Check for expired subscriptions every 60 seconds."""
 
     while True:
         try:
-            await asyncio.to_thread(run_expiry_check)
+            await asyncio.to_thread(run_subscription_reminder_check)
 
         except Exception:
-            logger.exception("Subscription expiry check failed.")
+            logger.exception(
+                "Subscription expiry and reminder check failed."
+            )
 
         await asyncio.sleep(60)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start and stop the subscription expiry scheduler."""
 
     scheduler_task = asyncio.create_task(expiry_scheduler())
 
-    logger.info("BinLock subscription expiry scheduler started.")
+    logger.info(
+        "BinLock subscription expiry and reminder scheduler started."
+    )
 
     try:
         yield
@@ -76,7 +80,9 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-        logger.info("BinLock subscription expiry scheduler stopped.")
+        logger.info(
+            "BinLock subscription expiry and reminder scheduler stopped."
+        )
 
 
 app = FastAPI(
