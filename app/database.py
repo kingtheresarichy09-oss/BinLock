@@ -8,33 +8,24 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# if DATABASE_URL:
-#     DATABASE_URL = DATABASE_URL.replace(
-#         "postgresql://",
-#         "postgresql+psycopg://",
-#         1
-#     )
-# else:
-#     DB_HOST = os.getenv("DB_HOST")
-#     DB_PORT = os.getenv("DB_PORT")
-#     DB_NAME = os.getenv("DB_NAME")
-#     DB_USER = os.getenv("DB_USER")
-#     DB_PASSWORD = os.getenv("DB_PASSWORD")
-
-#     DATABASE_URL = (
-#         f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}"
-#         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-#     )
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is missing. Check your environment variables."
+    )
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    pool_size=2,
+    max_overflow=0,
+    pool_timeout=30,
+    pool_recycle=1800,
 )
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
 Base = declarative_base()
