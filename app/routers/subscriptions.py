@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_admin
-from app.models import Subscription, OrganisationServiceTier, User
+from app.models import (
+    Subscription,
+    Organisation,
+    OrganisationServiceTier,
+    User,
+)
 from app.schemas import (
     SubscriptionCreate,
     SubscriptionResponse,
@@ -39,6 +44,39 @@ def get_utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def ensure_organisation_approved(
+    db: Session,
+    user: User,
+) -> None:
+    """
+    Prevent organisations from subscribing before admin approval.
+
+    Household accounts do not require organisation approval.
+    """
+
+    if user.customer_type != "organisation":
+        return
+
+    organisation = db.query(Organisation).filter(
+        Organisation.owner_user_id == user.id
+    ).first()
+
+    if not organisation:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No organisation registration was found for this account.",
+        )
+
+    if (organisation.status or "").strip().lower() != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Your organisation registration has not been approved yet. "
+                "Please wait for BinLock administration to approve it."
+            ),
+        )
 
 
 def process_expired_subscriptions(db: Session) -> int:
@@ -181,7 +219,10 @@ def get_subscription_amount(
         if service_tier is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Household subscriptions do not use organisation service tiers.",
+                detail=(
+                    "Household subscriptions do not use "
+                    "organisation service tiers."
+                ),
             )
 
         return HOUSEHOLD_PRICES[plan]
@@ -241,6 +282,9 @@ def create_subscription(
     current_user=Depends(get_current_user),
 ):
     process_expired_subscriptions(db)
+
+    # Organisations must be approved before subscribing.
+    ensure_organisation_approved(db, current_user)
 
     existing_subscription = db.query(Subscription).filter(
         Subscription.user_id == current_user.id,
@@ -337,6 +381,19 @@ def update_subscription_status(
     new_status = status_data.status
 
     if new_status == "active":
+        # Admin activation must not bypass organisation approval.
+        user = db.query(User).filter(
+            User.id == subscription.user_id
+        ).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Subscription customer not found.",
+            )
+
+        ensure_organisation_approved(db, user)
+
         if subscription.status != "active":
             now = datetime.now(timezone.utc)
 
@@ -390,6 +447,9 @@ def renew_subscription(
     current_user=Depends(get_current_user),
 ):
     process_expired_subscriptions(db)
+
+    # Organisations must still be approved when renewing.
+    ensure_organisation_approved(db, current_user)
 
     old_subscription = db.query(Subscription).filter(
         Subscription.id == subscription_id,
